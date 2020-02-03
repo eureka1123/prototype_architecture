@@ -22,25 +22,17 @@ class Autoencoder(nn.Module):
 
     def encode(self, inputs):
         x = torch.sigmoid(self.econv1(inputs))
-        # print(x.shape)
         x = torch.sigmoid(self.econv2(x))
-        # print(x.shape)
         x = torch.sigmoid(self.econv3(x))
-        # print(x.shape)
         x = torch.sigmoid(self.econv4(x))
-        # print(x.shape)
         return x
 
     def decode(self, inputs):
         x = inputs.reshape((len(inputs),10,2,2))
         x = torch.sigmoid(self.dconv1(inputs))
-        # print(x.shape)
         x = torch.sigmoid(self.dconv2(x))
-        # print(x.shape)
         x = torch.sigmoid(self.dconv3(x))
-        # print(x.shape)
         x = torch.sigmoid(self.dconv4(x))
-        # print(x.shape)
         return x
 
     def forward(self, inputs):
@@ -89,7 +81,6 @@ def list_of_norms(X):
 def load_data():
     batch_size_train = 250
     batch_size_test = 1000
-    #TODO should be [0,1]
     transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])#, torchvision.transforms.Normalize((0.1307,), (.3081,))])
     train_loader = DataLoader(torchvision.datasets.MNIST('data/', train=True, download=True,
                         transform = transform), batch_size = batch_size_train, shuffle = True)
@@ -113,9 +104,6 @@ def train(model, train_loader, optimizer, epochs = 10):
             cross_entropy_loss, recon_loss, r1_loss, r2_loss, loss = loss_func(transform_input, recon_input, data, output, target, prototypes_difs, feature_difs)
             loss.backward()
             optimizer.step()
-            # print(list(model.parameters())[2].grad.data)
-            # print(prototypes.grad)
-            # print(prototypes[0])
             pred = output.data.max(1, keepdim=True)[1]
             correct = pred.eq(target.data.view_as(pred)).sum()
             total+=len(pred)
@@ -125,7 +113,6 @@ def train(model, train_loader, optimizer, epochs = 10):
                     100.*batch_idx/len(train_loader), loss.item(), correct, total, 100.*correct/total))
                 print(cross_entropy_loss, recon_loss, r1_loss, r2_loss, loss)
                 train_losses.append(loss.item())
-#train counter?
                 torch.save(model.state_dict(), 'results/model.pth')    
                 torch.save(optimizer.state_dict(), 'results/optimizer.pth')      
 
@@ -159,13 +146,15 @@ def loss_func(transform_input, recon_input, input_target, output, output_target,
     total_loss = cl*cross_entropy_loss + l*recon_loss + l1*r1_loss + l2*r2_loss
     return cross_entropy_loss, recon_loss, r1_loss, r2_loss, total_loss
 
-def run_model():
+def run_model(train=True):
     learning_rate = .002
     model = Prototype(channels = 1, num_prototypes = 15, num_classes = 10)
-    # optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    train_loader, test_loader = load_data()
-    model.load_state_dict(torch.load("results/model.pth"))
-    # train(model, train_loader, optimizer)
+    if train:
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        train_loader, test_loader = load_data()
+        train(model, train_loader, optimizer)
+    else:
+        model.load_state_dict(torch.load("results/model.pth"))
     test(model,test_loader)
     
 run_model()
