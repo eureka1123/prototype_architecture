@@ -12,10 +12,9 @@ from torch.autograd import Variable
 import matplotlib.pyplot as plt 
 import os
 import csv
-import cv2
 from PIL import Image
+import cv2
 from helper_func import list_of_distances, list_of_norms
-from graphics import visualize_prototypes
 
 GAMMA = .95
 ENV_NAME = "CartPole-v1"
@@ -35,8 +34,8 @@ BoolTensor = torch.cuda.BoolTensor if use_cuda else torch.BoolTensor
 
 
 def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
-    weights_path = "model_weights"
-    ae_weights_path = "ae_model_weights"
+    weights_path = "model_unavg_weights"
+    ae_weights_path = "ae_model_unavg_weights"
     env = gym.make(ENV_NAME)
     observation_size = env.observation_space.shape[0]
     action_size = env.action_space.n
@@ -69,7 +68,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
     
     else:
         while not display:
-            if sum(scores[-10:])/10 >= threshold_step:
+            if sum(scores[-5:])/5 >= threshold_step:
                 display = True
             done = False
             env = gym.make(ENV_NAME)
@@ -78,7 +77,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
             step = 0
             while not done:
                 step +=1
-                if display:
+                if display and not visualize:
                     env.render()
                 action = return_action(dqn, state)
                 next_state, reward, done, info = env.step(action)
@@ -98,18 +97,30 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
 
     if visualize:
         autoencoder = dqn.eval_net.autoencoder
+        print(dqn.eval_net.prototypes)
+        print(len(dqn.eval_net.prototypes))
         decoded_prototypes = []
         for i in range(len(dqn.eval_net.prototypes)):
             prototype = dqn.eval_net.prototypes[i]
-            decoded_prototype = autoencoder.decode(prototype).data.numpy()
-            decoded_prototypes.append(decoded_prototype)
+            print(prototype)
+            decoded_prototype = autoencoder.decode(prototype)
+            print(decoded_prototype)
             env.env.state = decoded_prototype
-            img = env.render(mode='rgb_array')
-            img = visualize_prototypes(decoded_prototype, img)
-            cv2.imwrite('prototype_{}.png'.format(i), img)
-            env.close()
-
-        np.savetxt("prototypes.csv",decoded_prototypes)
+            decoded_prototypes.append(decoded_prototype)
+            c_pos, c_vel, p_ang, p_vel = decoded_prototype
+            # img = env.render(mode='rgb_array')
+            # img = Image.fromarray(img)
+            # center_x = 0
+            # center_y = 0
+            # if p_vel > 0:
+            #     img.line([center_x,center_y],[center_x+10,center_y])
+            # else:
+            #     img.line([center_x,center_y],[center_x-10,center_y])
+            # img.save('prototype_unavg_{}.png'.format(i))
+            # env.close()
+        print("prototypes saved")
+        print([j.data.numpy() for j in decoded_prototypes])
+        np.savetxt("prototypes_unavg.csv",[j.data.numpy() for j in decoded_prototypes])
 
     return scores
 
@@ -148,13 +159,15 @@ class Net(nn.Module):
         self.autoencoder = Autoencoder(observation_size)
         self.prototypes = nn.Parameter(torch.stack([torch.rand(size = (PROTOTYPE_SIZE,), requires_grad = True) for i in range(self.num_prototypes)]))
 
-        self.fc1 = nn.Linear(NUM_PROTOTYPES, action_size)
+        self.fc1 = nn.Linear(PROTOTYPE_SIZE, action_size)
 
     def forward(self, inputs):
         transform_input, recon_input = self.autoencoder(inputs)
         prototypes_difs = list_of_distances(transform_input,self.prototypes)
         feature_difs = list_of_distances(self.prototypes,transform_input)
-        output = self.fc1(prototypes_difs)
+
+        best_proto = self.prototypes[torch.argmin(feature_difs,dim=0)]
+        output = self.fc1(best_proto)
         
         return transform_input, recon_input, self.prototypes, output, prototypes_difs, feature_difs
 
@@ -167,6 +180,20 @@ class DQN(object):
         self.exploration_rate = EXPLORATION_MAX
         self.action_space = action_size
         self.optimizer = optim.Adam(self.eval_net.parameters(), lr=LEARNING_RATE)
+
+def list_of_distances(X,Y):
+    XX = list_of_norms(X)
+    XX = XX.view(-1,1)
+    YY = list_of_norms(Y)
+    YY = YY.view(1,-1)
+    output = XX + YY - 2*torch.matmul(X,Y.transpose(0,1))
+    return output
+
+def list_of_norms(X):
+    x = torch.pow(X,2)
+    x = x.view(x.shape[0],-1)
+    x = x.sum(1)
+    return x
 
 def loss_func(transform_input, recon_input, input_target, output, output_target, prototypes_difs, feature_difs):
     cl = 20
@@ -254,7 +281,7 @@ def generate_num_runs(num_runs = 20):
 
 # generate_num_runs(5)
 
-scores = run_cartpole_dqn(True, 250, visualize=True)
+scores = run_cartpole_dqn(False, 250, visualize=True)
 # plot_rewards(scores)
 
 
