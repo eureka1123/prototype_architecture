@@ -25,7 +25,7 @@ EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.01
 EXPLORATION_DECAY = 0.995
 PROTOTYPE_SIZE = 10
-TARGET_REPLACE_ITER = 100
+TARGET_REPLACE_ITER = 10
 NUM_PROTOTYPES = 20
 
 use_cuda = torch.cuda.is_available()
@@ -69,7 +69,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
     
     else:
         while not display:
-            if sum(scores[-10:])/10 >= threshold_step:
+            if len(scores)>6 and (sum(scores[-6:])-max(scores[-6:]))/5 >= threshold_step:
                 display = True
             done = False
             env = gym.make(ENV_NAME)
@@ -147,7 +147,6 @@ class Net(nn.Module):
         self.num_prototypes = NUM_PROTOTYPES
         self.autoencoder = Autoencoder(observation_size)
         self.prototypes = nn.Parameter(torch.stack([torch.rand(size = (PROTOTYPE_SIZE,), requires_grad = True) for i in range(self.num_prototypes)]))
-
         self.fc1 = nn.Linear(NUM_PROTOTYPES, action_size)
 
     def forward(self, inputs):
@@ -223,8 +222,11 @@ def return_action(dqn, state, train = True):
         if np.random.rand() < dqn.exploration_rate:
             return random.randrange(dqn.action_space)
     state_tensor = Variable(FloatTensor([state]))
-    q_values = dqn.eval_net(state_tensor)[3]
-
+    output = dqn.eval_net(state_tensor)
+    q_values = output[3]
+    prototypes_difs = output[4]
+    p_id = torch.argmin(prototypes_difs)
+    print(p_id)
     return torch.argmax(q_values).item()
 
 def plot_rewards(scores):
@@ -253,8 +255,8 @@ def generate_num_runs(num_runs = 20):
 # plot_rewards(scores)
 
 # generate_num_runs(5)
-
-scores = run_cartpole_dqn(True, 250, visualize=True)
+if __name__ == "__main__":
+    scores = run_cartpole_dqn(True, 250, visualize=False)
 # plot_rewards(scores)
 
 

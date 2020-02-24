@@ -15,6 +15,7 @@ import csv
 from PIL import Image
 import cv2
 from helper_func import list_of_distances, list_of_norms
+from graphics import visualize_prototypes
 
 GAMMA = .95
 ENV_NAME = "CartPole-v1"
@@ -24,7 +25,7 @@ EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.01
 EXPLORATION_DECAY = 0.995
 PROTOTYPE_SIZE = 10
-TARGET_REPLACE_ITER = 100
+TARGET_REPLACE_ITER = 40
 NUM_PROTOTYPES = 20
 
 use_cuda = torch.cuda.is_available()
@@ -97,30 +98,18 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
 
     if visualize:
         autoencoder = dqn.eval_net.autoencoder
-        print(dqn.eval_net.prototypes)
-        print(len(dqn.eval_net.prototypes))
         decoded_prototypes = []
         for i in range(len(dqn.eval_net.prototypes)):
             prototype = dqn.eval_net.prototypes[i]
-            print(prototype)
-            decoded_prototype = autoencoder.decode(prototype)
-            print(decoded_prototype)
-            env.env.state = decoded_prototype
+            decoded_prototype = autoencoder.decode(prototype).data.numpy()
             decoded_prototypes.append(decoded_prototype)
-            c_pos, c_vel, p_ang, p_vel = decoded_prototype
-            # img = env.render(mode='rgb_array')
-            # img = Image.fromarray(img)
-            # center_x = 0
-            # center_y = 0
-            # if p_vel > 0:
-            #     img.line([center_x,center_y],[center_x+10,center_y])
-            # else:
-            #     img.line([center_x,center_y],[center_x-10,center_y])
-            # img.save('prototype_unavg_{}.png'.format(i))
-            # env.close()
-        print("prototypes saved")
-        print([j.data.numpy() for j in decoded_prototypes])
-        np.savetxt("prototypes_unavg.csv",[j.data.numpy() for j in decoded_prototypes])
+            env.env.state = decoded_prototype
+            img = env.render(mode='rgb_array')
+            img = visualize_prototypes(decoded_prototype, img)
+            cv2.imwrite('prototypes_unavg/prototype_unavg_{}.png'.format(i), img)
+            env.close()
+
+        np.savetxt("prototypes_unavg.csv",decoded_prototypes)
 
     return scores
 
@@ -165,8 +154,7 @@ class Net(nn.Module):
         transform_input, recon_input = self.autoencoder(inputs)
         prototypes_difs = list_of_distances(transform_input,self.prototypes)
         feature_difs = list_of_distances(self.prototypes,transform_input)
-
-        best_proto = self.prototypes[torch.argmin(feature_difs,dim=0)]
+        best_proto = self.prototypes[torch.argmin(prototypes_difs,dim=1)]
         output = self.fc1(best_proto)
         
         return transform_input, recon_input, self.prototypes, output, prototypes_difs, feature_difs
@@ -281,7 +269,8 @@ def generate_num_runs(num_runs = 20):
 
 # generate_num_runs(5)
 
-scores = run_cartpole_dqn(False, 250, visualize=True)
+if __name__ == "__main__":
+    scores = run_cartpole_dqn(True, 250, visualize=True)
 # plot_rewards(scores)
 
 
