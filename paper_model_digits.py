@@ -6,6 +6,7 @@ import torchvision
 from torch.utils.data import DataLoader
 import torch.optim as optim
 import matplotlib.pyplot as plt 
+from helper_func import list_of_distances, list_of_norms
 
 class Autoencoder(nn.Module):
     def __init__(self, channels):
@@ -59,20 +60,6 @@ class Prototype(nn.Module):
         output = F.softmax(self.fc(prototypes_difs))
         return transform_input, recon_input, self.prototypes, output, prototypes_difs, feature_difs
 
-def list_of_distances(X,Y):
-    XX = list_of_norms(X)
-    XX = XX.view(-1,1)
-    YY = list_of_norms(Y)
-    YY = YY.view(1,-1)
-    output = XX + YY - 2*torch.matmul(X,Y.transpose(0,1))
-    return output
-
-def list_of_norms(X):
-    x = torch.pow(X,2)
-    x = x.view(x.shape[0],-1)
-    x = x.sum(1)
-    return x
-
 def load_data():
     batch_size_train = 250
     batch_size_test = 1000
@@ -106,10 +93,9 @@ def train(model, train_loader, optimizer, epochs = 10):
                 print('Train Epoch: {} [{}/{} {:0f}%)]\tloss: {:.6f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
                     epoch, batch_idx*len(data), len(train_loader.dataset),
                     100.*batch_idx/len(train_loader), loss.item(), correct, total, 100.*correct/total))
-                print(cross_entropy_loss, recon_loss, r1_loss, r2_loss, loss)
                 train_losses.append(loss.item())
-                torch.save(model.state_dict(), 'results/model.pth')    
-                torch.save(optimizer.state_dict(), 'results/optimizer.pth')      
+                # torch.save(model.state_dict(), 'results/model.pth')    
+                # torch.save(optimizer.state_dict(), 'results/optimizer.pth')      
 
 def test(model, test_loader):
     model.eval()
@@ -141,14 +127,14 @@ def loss_func(transform_input, recon_input, input_target, output, output_target,
     total_loss = cl*cross_entropy_loss + l*recon_loss + l1*r1_loss + l2*r2_loss
     return cross_entropy_loss, recon_loss, r1_loss, r2_loss, total_loss
 
-def run_model(train=False, test=False, visualize_prototypes=False):
+def run_model(should_train=False, should_test=False, visualize_prototypes=False):
     learning_rate = .002
     model = Prototype(channels = 1, num_prototypes = 15, num_classes = 10)
     train_loader, test_loader = load_data()
-    if train:
+    if should_train:
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
         train(model, train_loader, optimizer)
-    if test:
+    if should_test:
         model.load_state_dict(torch.load("results/model.pth"))
         test(model,test_loader)
     if visualize_prototypes: 
@@ -160,6 +146,6 @@ def run_model(train=False, test=False, visualize_prototypes=False):
             plt.show()
     
     
-run_model(visualize_prototypes=True)
+run_model(should_train=True,should_test = False,visualize_prototypes=True)
 
 

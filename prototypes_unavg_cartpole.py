@@ -16,14 +16,15 @@ from PIL import Image
 import cv2
 from helper_func import list_of_distances, list_of_norms
 from graphics import visualize_prototypes
+from cartpole import DQN as cartpole_DQN
 
 GAMMA = .95
 ENV_NAME = "CartPole-v1"
-LEARNING_RATE = .01
+LEARNING_RATE = .001
 BATCH_SIZE = 40
 EXPLORATION_MAX = 1.0
-EXPLORATION_MIN = 0.01
-EXPLORATION_DECAY = 0.995
+EXPLORATION_MIN = 0.001
+EXPLORATION_DECAY = 0.999
 PROTOTYPE_SIZE = 10
 TARGET_REPLACE_ITER = 40
 NUM_PROTOTYPES = 20
@@ -33,14 +34,22 @@ FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 BoolTensor = torch.cuda.BoolTensor if use_cuda else torch.BoolTensor
 
+weights_path = "new_model_unavg_weights"
+ae_weights_path = "new_ae_model_unavg_weights"
+cartpole_weights_path = "cartpole_weights"
 
 def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
-    weights_path = "model_unavg_weights"
-    ae_weights_path = "ae_model_unavg_weights"
+
     env = gym.make(ENV_NAME)
     observation_size = env.observation_space.shape[0]
     action_size = env.action_space.n
-    dqn = DQN(observation_size, action_size)
+
+    cartpole_dqn = cartpole_DQN(observation_size, action_size)
+    cartpole_dqn.eval_net.load_state_dict(torch.load(cartpole_weights_path))
+    for p in cartpole_dqn.eval_net.parameters():
+        p.requires_grad = False
+
+    dqn = DQN(observation_size, action_size,cartpole_dqn)
 
     criterion = loss_func
     run = 0
@@ -142,11 +151,12 @@ class Autoencoder(nn.Module):
         return transform_input, recon_input
 
 class Net(nn.Module):
-    def __init__(self, observation_size, action_size):
+    def __init__(self, observation_size, action_size, cartpole_dqn):
         super(Net, self).__init__()
         self.num_prototypes = NUM_PROTOTYPES
         self.autoencoder = Autoencoder(observation_size)
         self.prototypes = nn.Parameter(torch.stack([torch.rand(size = (PROTOTYPE_SIZE,), requires_grad = True) for i in range(self.num_prototypes)]))
+        self.cartpole_dqn = cartpole_dqn
 
         self.fc1 = nn.Linear(PROTOTYPE_SIZE, action_size)
 
@@ -160,9 +170,9 @@ class Net(nn.Module):
         return transform_input, recon_input, self.prototypes, output, prototypes_difs, feature_difs
 
 class DQN(object):
-    def __init__(self, observation_size, action_size):
+    def __init__(self, observation_size, action_size, cartpole_dqn):
         #maybe soft update, .001 as tau, 
-        self.eval_net, self.target_net = Net(observation_size, action_size), Net(observation_size, action_size)
+        self.eval_net, self.target_net = Net(observation_size, action_size, cartpole_dqn), Net(observation_size, action_size, cartpole_dqn)
         self.memory = []
         self.learn_step_counter = 0
         self.exploration_rate = EXPLORATION_MAX
@@ -220,7 +230,7 @@ def learn(dqn, criterion, state, action, reward, next_state, done):
 
     transform_input, recon_input, prototypes, output, prototypes_difs, feature_difs = dqn.eval_net(batch_state)
     current_q_values = output.gather(1, batch_action).view(BATCH_SIZE)
-    _,_,_,target_output,_,_ = dqn.target_net(batch_next_state)
+    _,_,_,target_output,_,_ = dqn.eval_net(batch_next_state)
     max_next_q_values = target_output.detach().max(1)[0]
     expected_q_values = ((GAMMA * max_next_q_values)*batch_done + batch_reward)
 
@@ -270,7 +280,7 @@ def generate_num_runs(num_runs = 20):
 # generate_num_runs(5)
 
 if __name__ == "__main__":
-    scores = run_cartpole_dqn(True, 250, visualize=True)
+    scores = run_cartpole_dqn(True, 250, visualize=False)
 # plot_rewards(scores)
 
 

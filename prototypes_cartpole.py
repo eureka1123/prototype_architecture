@@ -16,6 +16,7 @@ import cv2
 from PIL import Image
 from helper_func import list_of_distances, list_of_norms
 from graphics import visualize_prototypes
+from cartpole import DQN as cartpole_DQN
 
 GAMMA = .95
 ENV_NAME = "CartPole-v1"
@@ -33,14 +34,22 @@ FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 BoolTensor = torch.cuda.BoolTensor if use_cuda else torch.BoolTensor
 
+weights_path = "model_weights"
+ae_weights_path = "ae_model_weights"
+
+cartpole_weights_path = "cartpole_weights"
 
 def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
-    weights_path = "model_weights"
-    ae_weights_path = "ae_model_weights"
     env = gym.make(ENV_NAME)
     observation_size = env.observation_space.shape[0]
     action_size = env.action_space.n
-    dqn = DQN(observation_size, action_size)
+
+    cartpole_dqn = cartpole_DQN(observation_size, action_size)
+    cartpole_dqn.eval_net.load_state_dict(torch.load(cartpole_weights_path))
+    for p in cartpole_dqn.eval_net.parameters():
+        p.requires_grad = False
+
+    dqn = DQN(observation_size, action_size,cartpole_dqn)
 
     criterion = loss_func
     run = 0
@@ -51,6 +60,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
     if not train and os.path.exists(weights_path) and os.path.exists(ae_weights_path):
         dqn.eval_net.load_state_dict(torch.load(weights_path))
         dqn.eval_net.autoencoder.load_state_dict(torch.load(ae_weights_path))
+
         state = env.reset()
         step = 0
         done = False
@@ -142,25 +152,53 @@ class Autoencoder(nn.Module):
         return transform_input, recon_input
 
 class Net(nn.Module):
-    def __init__(self, observation_size, action_size):
+    def __init__(self, observation_size, action_size, cartpole_dqn):
         super(Net, self).__init__()
         self.num_prototypes = NUM_PROTOTYPES
         self.autoencoder = Autoencoder(observation_size)
         self.prototypes = nn.Parameter(torch.stack([torch.rand(size = (PROTOTYPE_SIZE,), requires_grad = True) for i in range(self.num_prototypes)]))
-        self.fc1 = nn.Linear(NUM_PROTOTYPES, action_size)
+        self.fc1 = nn.Linear(PROTOTYPE_SIZE, action_size)
+        self.cartpole_dqn = cartpole_dqn
 
     def forward(self, inputs):
         transform_input, recon_input = self.autoencoder(inputs)
-        prototypes_difs = list_of_distances(transform_input,self.prototypes)
-        feature_difs = list_of_distances(self.prototypes,transform_input)
-        output = self.fc1(prototypes_difs)
+        prototypes_difs = list_of_distances(transform_input, self.prototypes)
+        feature_difs = list_of_distances(self.prototypes, transform_input)
+        # print("prototype_difs", np.exp(-prototypes_difs.detach()).shape)
+        # sum_exp_difs = torch.sum(np.exp(-prototypes_difs.detach()),1)
+        # # print("sum_exp_dfs", sum_exp_difs.shape)
+        # decoded_prototypes = self.autoencoder.decode(self.prototypes)
+        # # print("decoded", decoded_prototypes.shape)
+        # q_values = self.cartpole_dqn.eval_net(decoded_prototypes)
+        # # print("q_values",q_values.shape)
+        # new_shape = list(prototypes_difs.shape)
+        # new_shape.append(2)
+        # new_shape = tuple(new_shape)
+        # # print(new_shape)
+        # prototype_difs_reshape = np.repeat(prototypes_difs.detach(), 2,axis=1).reshape(new_shape)
+        # # print("prototypes_difs",prototype_difs_reshape.shape)
+        # output=prototype_difs_reshape*q_values
+        # # print(output.shape)
+        # output=torch.sum(output,1)
+        # # print(output.shape)
+        # output=torch.t(torch.t(output)*(1/sum_exp_difs))
+        # # print(output)
+        best_proto = self.prototypes[torch.argmin(prototypes_difs,dim=1)]
+        decoded_prototype = self.autoencoder.decode(best_proto)
+        output = self.cartpole_dqn.eval_net(decoded_prototype)
+        output = self.cartpole_dqn.eval_net(recon_input)
+        print(output)
+        # output = self.fc1(best_proto)
+        # print(output.shape)
+          #take direct q values and then take weighted
+        # output = self.fc1(prototypes_difs)
         
         return transform_input, recon_input, self.prototypes, output, prototypes_difs, feature_difs
 
 class DQN(object):
-    def __init__(self, observation_size, action_size):
+    def __init__(self, observation_size, action_size, cartpole_dqn):
         #maybe soft update, .001 as tau, 
-        self.eval_net, self.target_net = Net(observation_size, action_size), Net(observation_size, action_size)
+        self.eval_net, self.target_net = Net(observation_size, action_size, cartpole_dqn), Net(observation_size, action_size, cartpole_dqn)
         self.memory = []
         self.learn_step_counter = 0
         self.exploration_rate = EXPLORATION_MAX
@@ -204,11 +242,12 @@ def learn(dqn, criterion, state, action, reward, next_state, done):
 
     transform_input, recon_input, prototypes, output, prototypes_difs, feature_difs = dqn.eval_net(batch_state)
     current_q_values = output.gather(1, batch_action).view(BATCH_SIZE)
-    _,_,_,target_output,_,_ = dqn.target_net(batch_next_state)
+    target_output = dqn.eval_net.cartpole_dqn.eval_net(batch_next_state)
     max_next_q_values = target_output.detach().max(1)[0]
     expected_q_values = ((GAMMA * max_next_q_values)*batch_done + batch_reward)
 
     mse_loss, recon_loss, r1_loss, r2_loss, loss = criterion(transform_input, recon_input, batch_state, current_q_values, expected_q_values, prototypes_difs, feature_difs)
+    # print(mse_loss.item(), recon_loss.item(), r1_loss.item(), r2_loss.item(), loss.item())
     dqn.optimizer.zero_grad()
     loss.backward()
     
@@ -226,7 +265,6 @@ def return_action(dqn, state, train = True):
     q_values = output[3]
     prototypes_difs = output[4]
     p_id = torch.argmin(prototypes_difs)
-    print(p_id)
     return torch.argmax(q_values).item()
 
 def plot_rewards(scores):
