@@ -5,6 +5,7 @@ import csv
 import torch
 import cv2
 import numpy as np
+from cartpole import DQN as cartpole_DQN
 
 ENV_NAME = "CartPole-v1"
 use_cuda = torch.cuda.is_available()
@@ -12,13 +13,23 @@ FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 
 weights_path = "model_unavg_weights"
 ae_weights_path = "ae_model_unavg_weights"
+cartpole_weights_path = "cartpole_weights"
+
 env = gym.make(ENV_NAME)
 observation_size = env.observation_space.shape[0]
 action_size = env.action_space.n
-dqn = DQN(observation_size, action_size)
+
+cartpole_dqn = cartpole_DQN(observation_size, action_size)
+cartpole_dqn.eval_net.load_state_dict(torch.load(cartpole_weights_path))
+
+dqn = DQN(observation_size, action_size, cartpole_dqn)
 dqn.eval_net.load_state_dict(torch.load(weights_path))
 dqn.eval_net.autoencoder.load_state_dict(torch.load(ae_weights_path))
 autoencoder = dqn.eval_net.autoencoder
+
+for p in cartpole_dqn.eval_net.parameters():
+    p.requires_grad = False
+
 p_ids = {}
 interval = 30
 
@@ -30,7 +41,8 @@ for e in range(1):
     while not done:
         step +=1
         action = return_action(dqn, state, train=False)
-        states.append(list(state))
+        orig_action = return_action(cartpole_dqn, state, train=False)
+        states.append((list(state), action, orig_action))
         next_state, reward, done, info = env.step(action)
         if done:
             reward = -reward
@@ -41,11 +53,11 @@ for e in range(1):
 
     for i in range(len(states)):
         print("pair",i)
-        state = states[i]
+        state, action, orig_action = states[i]
         if i%interval==0:
             env.env.state = state
             state_img = env.render(mode='rgb_array')
-            state_img = visualize_prototypes(state, state_img)
+            state_img = visualize_prototypes(state, orig_action, state_img)
             state_img = cv2.copyMakeBorder(
                 state_img,
                 top=0,
@@ -69,7 +81,7 @@ for e in range(1):
             decoded_prototype = autoencoder.decode(prototype).data.numpy()
             env.env.state = decoded_prototype
             proto_img = env.render(mode='rgb_array')
-            proto_img = visualize_prototypes(decoded_prototype, proto_img)
+            proto_img = visualize_prototypes(decoded_prototype, action, proto_img)
 
             org = (400, 50) 
             font = cv2.FONT_HERSHEY_SIMPLEX 

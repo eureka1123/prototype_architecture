@@ -21,13 +21,13 @@ from cartpole import DQN as cartpole_DQN
 GAMMA = .95
 ENV_NAME = "CartPole-v1"
 LEARNING_RATE = .001
-BATCH_SIZE = 40
+BATCH_SIZE = 64
 EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.001
 EXPLORATION_DECAY = 0.999
 PROTOTYPE_SIZE = 10
 TARGET_REPLACE_ITER = 40
-NUM_PROTOTYPES = 20
+NUM_PROTOTYPES = 10
 
 use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
@@ -68,6 +68,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
             if not visualize:
                 env.render()
             action = return_action(dqn, state, train=False)
+            orig_action = return_action(cartpole_dqn, state, train=False)
             next_state, reward, done, info = env.step(action)
             if done:
                 reward = -reward
@@ -78,7 +79,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
     
     else:
         while not display:
-            if sum(scores[-5:])/5 >= threshold_step:
+            if sum(scores[-8:])/8 >= threshold_step:
                 display = True
             done = False
             env = gym.make(ENV_NAME)
@@ -248,8 +249,11 @@ def return_action(dqn, state, train = True):
         if np.random.rand() < dqn.exploration_rate:
             return random.randrange(dqn.action_space)
     state_tensor = Variable(FloatTensor([state]))
-    q_values = dqn.eval_net(state_tensor)[3]
-
+    output = dqn.eval_net(state_tensor)
+    if len(output)>1:
+        q_values = dqn.eval_net(state_tensor)[3]
+    else:
+        q_values = dqn.eval_net(state_tensor)
     return torch.argmax(q_values).item()
 
 def plot_rewards(scores):
@@ -280,7 +284,7 @@ def generate_num_runs(num_runs = 20):
 # generate_num_runs(5)
 
 if __name__ == "__main__":
-    scores = run_cartpole_dqn(True, 250, visualize=False)
+    scores = run_cartpole_dqn(True, 250, visualize=True)
 # plot_rewards(scores)
 
 
