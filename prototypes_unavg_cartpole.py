@@ -27,7 +27,7 @@ EXPLORATION_MIN = 0.001
 EXPLORATION_DECAY = 0.999
 PROTOTYPE_SIZE = 10
 TARGET_REPLACE_ITER = 40
-NUM_PROTOTYPES = 10
+NUM_PROTOTYPES = 12
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cpu")
@@ -87,7 +87,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
     
     else:
         while not display:
-            if sum(scores[-8:])/8 >= threshold_step:
+            if sum(scores[-10:])/10 >= threshold_step:
                 display = True
             done = False
             env = gym.make(ENV_NAME)
@@ -121,7 +121,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
         decoded_prototypes = []
         for i in range(len(dqn.eval_net.prototypes)):
             prototype = dqn.eval_net.prototypes[i]
-            decoded_prototype = autoencoder.decode(prototype).data.numpy()
+            decoded_prototype = autoencoder.decode(prototype).data.cpu()numpy()
             decoded_prototypes.append(decoded_prototype)
             env.env.state = decoded_prototype
             img = env.render(mode='rgb_array')
