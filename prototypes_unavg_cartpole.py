@@ -107,7 +107,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
                 state = next_state
                 if done:
                     if step>100:
-                        LEARNING_RATE = .01
+                        LEARNING_RATE = .001
                     print("run: ", run, " score: ", step)
                     scores.append(step)
                     env.close()
