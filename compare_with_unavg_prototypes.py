@@ -1,6 +1,8 @@
 import gym
 from graphics import visualize_prototypes
-from prototypes_unavg_cartpole import DQN, return_action
+# from prototypes_unavg_cartpole import DQN, return_action
+from prototypes_cartpole import DQN, return_action
+
 import csv
 import torch
 import cv2
@@ -11,8 +13,8 @@ ENV_NAME = "CartPole-v1"
 use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 
-weights_path = "model_unavg_weights"
-ae_weights_path = "ae_model_unavg_weights"
+weights_path = "model_weights"#model_unavg_weights_50"
+ae_weights_path = "ae_model_weights"#ae_model_unavg_weights_50"
 cartpole_weights_path = "cartpole_weights"
 
 env = gym.make(ENV_NAME)
@@ -31,8 +33,8 @@ for p in cartpole_dqn.eval_net.parameters():
     p.requires_grad = False
 
 p_ids = {}
-interval = 30
-
+interval = 10
+same = 0
 for e in range(1):
     states = []
     state = env.reset()
@@ -42,6 +44,8 @@ for e in range(1):
         step +=1
         action = return_action(dqn, state, train=False)
         orig_action = return_action(cartpole_dqn, state, train=False)
+        if action == orig_action:
+            same += 1
         states.append((list(state), action, orig_action))
         next_state, reward, done, info = env.step(action)
         if done:
@@ -50,9 +54,9 @@ for e in range(1):
         if done:
             print("run: ", e, " score: ", step)
             env.close()
-
+    print(same, len(states),same/len(states))
     for i in range(len(states)):
-        print("pair",i)
+        # print("pair",i)
         state, action, orig_action = states[i]
         if i%interval==0:
             env.env.state = state
@@ -91,7 +95,7 @@ for e in range(1):
             proto_img = cv2.putText(proto_img, "prototype "+str(p_id), org, font, fontScale, color, thickness, cv2.LINE_AA)
 
             img = np.concatenate((state_img, proto_img), axis=1)
-            cv2.imwrite('pairs_unavg/episode_{}_pair_{}.png'.format(e,i), img)
+            cv2.imwrite('pairs_unavg_using_dqn_20/episode_{}_pair_{}.png'.format(e,i), img)
             env.close()
     print(p_ids)
 

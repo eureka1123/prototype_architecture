@@ -12,8 +12,8 @@ ENV_NAME = "CartPole-v1"
 use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 
-weights_path = "model_unavg_weights"
-ae_weights_path = "ae_model_unavg_weights"
+weights_path = "new_model_unavg_weights_15"
+ae_weights_path = "new_ae_model_unavg_weights_15"
 cartpole_weights_path = "cartpole_weights"
 
 states_path = "states.csv"
@@ -33,14 +33,36 @@ autoencoder = dqn.eval_net.autoencoder
 for p in cartpole_dqn.eval_net.parameters():
     p.requires_grad = False
 
+states = []
+state = env.reset()
+step = 0
+done = False
+
+while not done:
+    step +=1
+    action = return_action(dqn, state, train=False)
+    orig_action = return_action(cartpole_dqn, state, train=False)
+    states.append(list(state))
+    next_state, reward, done, info = env.step(action)
+    if done:
+        reward = -reward
+    state = next_state
+    if done:
+        env.close()
+
+steps_num = len(states)
+print(len(states))
+
+old_states = []
 with open (states_path, "r") as f:
     reader = csv.reader(f)
-    states = list(list(i) for i in reader)
-states = [[float(i) for i in j] for j in states]
+    old_states = list(list(i) for i in reader)
+old_states = states.extend([[float(i) for i in j] for j in old_states])
 
 p_ids = {}
 print(len(states))
-for i in range(0,len(states),100):
+
+def categorize(i):
     print("state",i)
     state = states[i]
     action = return_action(dqn, state, train=False)
@@ -83,9 +105,17 @@ for i in range(0,len(states),100):
     proto_img = cv2.putText(proto_img, "prototype "+str(p_id), org, font, fontScale, color, thickness, cv2.LINE_AA)
 
     img = np.concatenate((state_img, proto_img), axis=1)
-    if "prototype_{}".format(p_id) not in os.listdir('prototypes_categorized'):
-        os.mkdir("prototypes_categorized/prototype_{}".format(p_id))
-    cv2.imwrite('prototypes_categorized/prototype_{}/state_{}.png'.format(p_id,i), img)
+    if "prototype_{}".format(p_id) not in os.listdir('new_prototypes_categorized_15'):
+        os.mkdir("new_prototypes_categorized_15/prototype_{}".format(p_id))
+    cv2.imwrite('new_prototypes_categorized_15/prototype_{}/state_{}.png'.format(p_id,i), img)
     env.close()
+
+for i in range(0,steps_num):#len(states),50):
+    categorize(i)
+
+for i in range(steps_num, len(states),50):
+    categorize(i)
+
+
 
 print(p_ids)
