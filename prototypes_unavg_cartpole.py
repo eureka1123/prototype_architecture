@@ -20,8 +20,8 @@ from cartpole import DQN as cartpole_DQN
 
 GAMMA = .95
 ENV_NAME = "CartPole-v1"
-LEARNING_RATE = .001
-BATCH_SIZE = 64
+LEARNING_RATE = .01
+BATCH_SIZE = 40
 EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.001
 EXPLORATION_DECAY = 0.999
@@ -30,6 +30,11 @@ TARGET_REPLACE_ITER = 40
 NUM_PROTOTYPES = 10
 
 use_cuda = torch.cuda.is_available()
+device = torch.device("cpu")
+if use_cuda:
+    print("using gpu")
+    device = torch.device("cuda:0")
+
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 BoolTensor = torch.cuda.BoolTensor if use_cuda else torch.BoolTensor
@@ -48,8 +53,11 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
     cartpole_dqn.eval_net.load_state_dict(torch.load(cartpole_weights_path))
     for p in cartpole_dqn.eval_net.parameters():
         p.requires_grad = False
+    
+    cartpole_dqn.eval_net.to(device)
 
     dqn = DQN(observation_size, action_size,cartpole_dqn)
+    dqn.eval_net.to(device)
 
     criterion = loss_func
     run = 0
@@ -98,6 +106,8 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
 
                 state = next_state
                 if done:
+                    if step>100:
+                        LEARNING_RATE = .01
                     print("run: ", run, " score: ", step)
                     scores.append(step)
                     env.close()
@@ -223,11 +233,11 @@ def learn(dqn, criterion, state, action, reward, next_state, done):
     batch = random.sample(dqn.memory, BATCH_SIZE)
     batch_state, batch_action, batch_reward, batch_next_state, batch_done = zip(*batch)
 
-    batch_state  = Variable(torch.cat(batch_state))
-    batch_action = Variable(torch.cat(batch_action))
-    batch_reward = Variable(torch.cat(batch_reward))
-    batch_next_state = Variable(torch.cat(batch_next_state))
-    batch_done = Variable(torch.cat(batch_done))
+    batch_state  = Variable(torch.cat(batch_state)).to(device)
+    batch_action = Variable(torch.cat(batch_action)).to(device)
+    batch_reward = Variable(torch.cat(batch_reward)).to(device)
+    batch_next_state = Variable(torch.cat(batch_next_state)).to(device)
+    batch_done = Variable(torch.cat(batch_done)).to(device)
 
     transform_input, recon_input, prototypes, output, prototypes_difs, feature_difs = dqn.eval_net(batch_state)
     current_q_values = output.gather(1, batch_action).view(BATCH_SIZE)
@@ -248,7 +258,7 @@ def return_action(dqn, state, train = True):
     if train:
         if np.random.rand() < dqn.exploration_rate:
             return random.randrange(dqn.action_space)
-    state_tensor = Variable(FloatTensor([state]))
+    state_tensor = Variable(FloatTensor([state])).to(device)
     output = dqn.eval_net(state_tensor)
     if len(output)>1:
         q_values = dqn.eval_net(state_tensor)[3]
