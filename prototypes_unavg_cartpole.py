@@ -28,6 +28,7 @@ EXPLORATION_DECAY = 0.999
 PROTOTYPE_SIZE = 10
 TARGET_REPLACE_ITER = 40
 NUM_PROTOTYPES = 12
+LEN_MEMORY = 10000
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cpu")
@@ -228,7 +229,7 @@ def learn(dqn, criterion, state, action, reward, next_state, done):
 
     dqn.eval_net.train()
     dqn.memory.append((FloatTensor([state]), LongTensor([[action]]), FloatTensor([reward]), FloatTensor([next_state]), FloatTensor([0 if done else 1])))
-
+    dqn.memory = dqn.memory[-LEN_MEMORY:]
     if len(dqn.memory) < BATCH_SIZE:
         return 
     batch = random.sample(dqn.memory, BATCH_SIZE)
