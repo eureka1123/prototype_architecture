@@ -221,9 +221,9 @@ def loss_func(transform_input, recon_input, input_target, output, output_target,
     return mse_loss, recon_loss, r1_loss, r2_loss, total_loss
 
 def learn(dqn, criterion, state, action, reward, next_state, done):
-    if dqn.learn_step_counter % TARGET_REPLACE_ITER == 0:
-        dqn.target_net.load_state_dict(dqn.eval_net.state_dict())
-    dqn.learn_step_counter += 1
+    # if dqn.learn_step_counter % TARGET_REPLACE_ITER == 0:
+    #     dqn.target_net.load_state_dict(dqn.eval_net.state_dict())
+    # dqn.learn_step_counter += 1
 
     dqn.eval_net.train()
     dqn.memory.append((FloatTensor([state]), LongTensor([[action]]), FloatTensor([reward]), FloatTensor([next_state]), FloatTensor([0 if done else 1])))
