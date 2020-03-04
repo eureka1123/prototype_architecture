@@ -121,7 +121,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
         decoded_prototypes = []
         for i in range(len(dqn.eval_net.prototypes)):
             prototype = dqn.eval_net.prototypes[i]
-            decoded_prototype = autoencoder.decode(prototype).data.cpu()numpy()
+            decoded_prototype = autoencoder.decode(prototype).data.cpu().numpy()
             decoded_prototypes.append(decoded_prototype)
             env.env.state = decoded_prototype
             img = env.render(mode='rgb_array')
