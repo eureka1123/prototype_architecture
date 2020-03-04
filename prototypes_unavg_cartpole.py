@@ -108,6 +108,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
                 if done:
                     if step>100:
                         LEARNING_RATE = .001
+                        BATCH_SIZE = 120
                     print("run: ", run, " score: ", step)
                     scores.append(step)
                     env.close()
