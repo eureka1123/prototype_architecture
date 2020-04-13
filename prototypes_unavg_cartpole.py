@@ -18,17 +18,17 @@ from helper_func import list_of_distances, list_of_norms
 from graphics import visualize_prototypes
 from cartpole import DQN as cartpole_DQN
 
-GAMMA = .95
+GAMMA = .99
 ENV_NAME = "CartPole-v1"
-LEARNING_RATE = .01
+LEARNING_RATE = .001 #TODO: try lower 
 BATCH_SIZE = 40
 EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.001
 EXPLORATION_DECAY = 0.999
-PROTOTYPE_SIZE = 10
-TARGET_REPLACE_ITER = 40
-NUM_PROTOTYPES = 12
-LEN_MEMORY = 10000
+PROTOTYPE_SIZE = 10 #30 #100, 100 to 10
+# TARGET_REPLACE_ITER = 20
+NUM_PROTOTYPES = 10
+LEN_MEMORY = 10000 #100000
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cpu")
@@ -40,8 +40,8 @@ FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 BoolTensor = torch.cuda.BoolTensor if use_cuda else torch.BoolTensor
 
-weights_path = "new_model_unavg_weights"
-ae_weights_path = "new_ae_model_unavg_weights"
+weights_path = "model_unavg_weights_50"
+ae_weights_path = "ae_model_unavg_weights_50"
 cartpole_weights_path = "cartpole_weights"
 
 def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
@@ -88,7 +88,7 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
     
     else:
         while not display:
-            if sum(scores[-10:])/10 >= threshold_step:
+            if sum(scores[-30:])/30 >= threshold_step:
                 display = True
             done = False
             env = gym.make(ENV_NAME)
@@ -103,13 +103,17 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
                 next_state, reward, done, info = env.step(action)
                 if done:
                     reward = -reward
-                learn(dqn, criterion, state, action, reward, next_state, done)
+                to_print = False
+                # if step > 50:
+                #     to_print = True
+                learn(dqn, criterion, state, action, reward, next_state, done, to_print)
 
                 state = next_state
                 if done:
-                    if step>100:
-                        LEARNING_RATE = .001
-                        BATCH_SIZE = 120
+                    # if step > 250:
+                    #     GAMMA = .95
+                    #     LEARNING_RATE = .001
+                    #     BATCH_SIZE = 120
                     print("run: ", run, " score: ", step)
                     scores.append(step)
                     env.close()
@@ -126,8 +130,9 @@ def run_cartpole_dqn(train = False, threshold_step = 250, visualize = False):
             decoded_prototype = autoencoder.decode(prototype).data.cpu().numpy()
             decoded_prototypes.append(decoded_prototype)
             env.env.state = decoded_prototype
+            action = return_action(dqn, decoded_prototype,train = False)
             img = env.render(mode='rgb_array')
-            img = visualize_prototypes(decoded_prototype, img)
+            img = visualize_prototypes(decoded_prototype, action, img)
             cv2.imwrite('prototypes_unavg/prototype_unavg_{}.png'.format(i), img)
             env.close()
 
@@ -186,6 +191,7 @@ class DQN(object):
     def __init__(self, observation_size, action_size, cartpole_dqn):
         #maybe soft update, .001 as tau, 
         self.eval_net, self.target_net = Net(observation_size, action_size, cartpole_dqn), Net(observation_size, action_size, cartpole_dqn)
+        #TODO: hard update here
         self.memory = []
         self.learn_step_counter = 0
         self.exploration_rate = EXPLORATION_MAX
@@ -222,10 +228,11 @@ def loss_func(transform_input, recon_input, input_target, output, output_target,
     total_loss = cl*mse_loss + l*recon_loss + l1*r1_loss + l2*r2_loss
     return mse_loss, recon_loss, r1_loss, r2_loss, total_loss
 
-def learn(dqn, criterion, state, action, reward, next_state, done):
+def learn(dqn, criterion, state, action, reward, next_state, done, to_print = False):
     # if dqn.learn_step_counter % TARGET_REPLACE_ITER == 0:
     #     dqn.target_net.load_state_dict(dqn.eval_net.state_dict())
     # dqn.learn_step_counter += 1
+    update(dqn.target_net, dqn.eval_net)
 
     dqn.eval_net.train()
     dqn.memory.append((FloatTensor([state]), LongTensor([[action]]), FloatTensor([reward]), FloatTensor([next_state]), FloatTensor([0 if done else 1])))
@@ -243,18 +250,30 @@ def learn(dqn, criterion, state, action, reward, next_state, done):
 
     transform_input, recon_input, prototypes, output, prototypes_difs, feature_difs = dqn.eval_net(batch_state)
     current_q_values = output.gather(1, batch_action).view(BATCH_SIZE)
-    _,_,_,target_output,_,_ = dqn.eval_net(batch_next_state)
+    _,_,_,target_output,_,_ = dqn.target_net(batch_next_state)
     max_next_q_values = target_output.detach().max(1)[0]
     expected_q_values = ((GAMMA * max_next_q_values)*batch_done + batch_reward)
 
     mse_loss, recon_loss, r1_loss, r2_loss, loss = criterion(transform_input, recon_input, batch_state, current_q_values, expected_q_values, prototypes_difs, feature_difs)
     dqn.optimizer.zero_grad()
     loss.backward()
+    if to_print:
+        print(mse_loss.data, recon_loss.data, r1_loss.data, r2_loss.data, loss.data)
     
     dqn.optimizer.step()
     dqn.exploration_rate *= EXPLORATION_DECAY
     dqn.exploration_rate = max(EXPLORATION_MIN, dqn.exploration_rate)
 
+def update(m1, m2):
+    for key in list(m1.state_dict().keys()):
+        key_split = key.split(".")
+        m1_data = m1
+        m2_data = m2
+        for k in key_split:
+            m1_data = m1_data.__getattr__(k)
+            m2_data = m2_data.__getattr__(k)
+
+        m1_data.data = .01*(m2_data.data) + .99*(m1_data.data)
 
 def return_action(dqn, state, train = True):
     if train:

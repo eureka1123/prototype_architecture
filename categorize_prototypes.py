@@ -1,19 +1,24 @@
 import gym
 from graphics import visualize_prototypes
-from prototypes_unavg_cartpole import DQN, return_action
+from prototypes_cartpole import Net, return_action
 import csv
 import torch
 import cv2
 import numpy as np
 from cartpole import DQN as cartpole_DQN
 import os 
+import json
 
 ENV_NAME = "CartPole-v1"
 use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 
-weights_path = "new_model_unavg_weights_15"
-ae_weights_path = "new_ae_model_unavg_weights_15"
+param_dir = 'param_23'
+with open(param_dir+"/metadata") as f:
+    params = json.load(f)
+
+weights_path = param_dir+"/model_weights"
+ae_weights_path = param_dir+"/ae_model_weights"
 cartpole_weights_path = "cartpole_weights"
 
 states_path = "states.csv"
@@ -25,7 +30,7 @@ action_size = env.action_space.n
 cartpole_dqn = cartpole_DQN(observation_size, action_size)
 cartpole_dqn.eval_net.load_state_dict(torch.load(cartpole_weights_path))
 
-dqn = DQN(observation_size, action_size, cartpole_dqn)
+dqn = Net(params,observation_size, action_size, cartpole_dqn)
 dqn.eval_net.load_state_dict(torch.load(weights_path))
 dqn.eval_net.autoencoder.load_state_dict(torch.load(ae_weights_path))
 autoencoder = dqn.eval_net.autoencoder
@@ -105,9 +110,12 @@ def categorize(i):
     proto_img = cv2.putText(proto_img, "prototype "+str(p_id), org, font, fontScale, color, thickness, cv2.LINE_AA)
 
     img = np.concatenate((state_img, proto_img), axis=1)
-    if "prototype_{}".format(p_id) not in os.listdir('new_prototypes_categorized_15'):
-        os.mkdir("new_prototypes_categorized_15/prototype_{}".format(p_id))
-    cv2.imwrite('new_prototypes_categorized_15/prototype_{}/state_{}.png'.format(p_id,i), img)
+    parent_dir = param_dir+"/prototypes_categorized_"+str(params["NUM_PROTOTYPES"])
+    if "prototypes_categorized_"+str(params["NUM_PROTOTYPES"]) not in os.listdir(param_dir):
+        os.mkdir(parent_dir)
+    if "prototype_{}".format(p_id) not in os.listdir(parent_dir):
+        os.mkdir(parent_dir+"/prototype_{}".format(p_id))
+    cv2.imwrite(parent_dir+'/prototype_{}/state_{}.png'.format(p_id,i), img)
     env.close()
 
 for i in range(0,steps_num):#len(states),50):

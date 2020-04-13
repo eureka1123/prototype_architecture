@@ -1,21 +1,27 @@
 import gym
 from graphics import visualize_prototypes
 # from prototypes_unavg_cartpole import DQN, return_action
-from prototypes_cartpole import DQN, return_action
+from prototypes_cartpole import Net, return_action
 
 import csv
 import torch
 import cv2
 import numpy as np
 from cartpole import DQN as cartpole_DQN
+import os 
+import json
 
+param_dir = 'param_23'
+with open(param_dir+"/metadata") as f:
+    params = json.load(f)
+# params = Params(params)
 ENV_NAME = "CartPole-v1"
 use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 
-weights_path = "model_weights"#model_unavg_weights_50"
-ae_weights_path = "ae_model_weights"#ae_model_unavg_weights_50"
-cartpole_weights_path = "cartpole_weights"
+weights_path = params["weights_path"]#model_unavg_weights_50"
+ae_weights_path = params["ae_weights_path"]#ae_model_unavg_weights_50"
+cartpole_weights_path = params["cartpole_weights_path"]
 
 env = gym.make(ENV_NAME)
 observation_size = env.observation_space.shape[0]
@@ -24,7 +30,7 @@ action_size = env.action_space.n
 cartpole_dqn = cartpole_DQN(observation_size, action_size)
 cartpole_dqn.eval_net.load_state_dict(torch.load(cartpole_weights_path))
 
-dqn = DQN(observation_size, action_size, cartpole_dqn)
+dqn = Net(params,observation_size, action_size, cartpole_dqn)
 dqn.eval_net.load_state_dict(torch.load(weights_path))
 dqn.eval_net.autoencoder.load_state_dict(torch.load(ae_weights_path))
 autoencoder = dqn.eval_net.autoencoder
@@ -35,11 +41,12 @@ for p in cartpole_dqn.eval_net.parameters():
 p_ids = {}
 interval = 10
 same = 0
-for e in range(1):
+for e in range(10):
     states = []
     state = env.reset()
     step = 0
     done = False
+    same = 0
     while not done:
         step +=1
         action = return_action(dqn, state, train=False)
@@ -54,7 +61,7 @@ for e in range(1):
         if done:
             print("run: ", e, " score: ", step)
             env.close()
-    print(same, len(states),same/len(states))
+    print(same, len(states), same/len(states))
     for i in range(len(states)):
         # print("pair",i)
         state, action, orig_action = states[i]
@@ -95,7 +102,9 @@ for e in range(1):
             proto_img = cv2.putText(proto_img, "prototype "+str(p_id), org, font, fontScale, color, thickness, cv2.LINE_AA)
 
             img = np.concatenate((state_img, proto_img), axis=1)
-            cv2.imwrite('pairs_unavg_using_dqn_20/episode_{}_pair_{}.png'.format(e,i), img)
+            if "pairs_using_dqn_20_eps_"+str(e) not in os.listdir(param_dir):
+                os.mkdir(param_dir+"/pairs_using_dqn_20_eps_"+str(e))
+            cv2.imwrite(param_dir+"/pairs_using_dqn_20_eps_{}/pair_{}.png".format(e,i), img)
             env.close()
     print(p_ids)
 
